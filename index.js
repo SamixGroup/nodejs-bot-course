@@ -1,41 +1,73 @@
-const { Telegraf } = require('telegraf')
+const { Telegraf, session, Scenes } = require('telegraf')
 
 require('dotenv').config()
-
-const { RateLimiter } = require('@riddea/telegraf-rate-limiter')
 const bot = new Telegraf(process.env.TOKEN)
 
-const rateLimiter = new RateLimiter(1, 2000);
 
-const rate = async (ctx, next) => {
-    const limited = await rateLimiter.take(ctx.from.id);
-    if (limited) return await ctx.reply("Hey! Wait 2 second before send new message!");
-    else next()
-}
+const simpleScene = new Scenes.BaseScene('simple-id')
 
-bot.use(async (ctx, next) => {
-    const time = new Date().getTime()
-    await next()
-    console.log(new Date().getTime() - time)
-})
 
-const onlyAdmin = async (ctx, next) => {
-    if( ctx.from.id === 12920798){
-        await next()
+
+const wizard = new Scenes.WizardScene('wizard',
+    ctx => {
+        ctx.reply('Step 1')
+        ctx.wizard.cursor++
+        ctx.wizard.cursor++
+    },
+    ctx=>{
+        ctx.reply('Step 2')
+        ctx.wizard.next()
+    },
+    ctx=> {
+        ctx.reply("Step 3")
+        ctx.wizard.back()
     }
-}
+)
 
-bot.start(rate, async (ctx) => {
-    
-    ctx.sendMessage("Assalomu alaykum, men sizni habarlaringizni qayta yuboraman!")
+
+
+simpleScene.enter(ctx => {
+    ctx.reply("Ismingizni kiriting: ")
 })
 
-bot.hears(/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/, async (ctx) => {
-    console.log(ctx.message.text)
+simpleScene.leave(ctx => {
+    ctx.reply(`Ismingizni saqlandi: ${ctx.session.name}`)
 })
 
-bot.command('test', async(ctx) => {
-    ctx.sendMessage("Test command is working")
+// simpleScene.on('text', ctx=>{
+//     ctx.session.name = ctx.message.text
+//     ctx.scene.leave()
+// })
+
+simpleScene.command('test', ctx => {
+    ctx.reply('Inside scene')
+    ctx.session.name = 'test'
+    ctx.scene.leave()
 })
+
+
+simpleScene.command('t', ctx => {
+    ctx.reply('Inside scene')
+})
+
+const stage = new Scenes.Stage([simpleScene,wizard])
+
+bot.use(session())
+bot.use(stage.middleware())
+bot.use(async (ctx, next) => {
+    if (ctx.session === undefined) ctx.session = {}
+    await next()
+})
+
+bot.start(ctx => {
+    ctx.reply("Salom")
+    ctx.session.state = "start"
+})
+
+bot.command('test', ctx => {
+    ctx.reply(`${ctx.session.state}`)
+})
+
+bot.command("enter", ctx => ctx.scene.enter('wizard'))
 
 bot.launch()
